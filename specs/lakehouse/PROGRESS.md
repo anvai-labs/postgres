@@ -54,12 +54,17 @@ flowchart LR
 | v3 conformance (doc 14) | 50% 🔶 | V0/V1/V2 ✅ — V3 (DV write) V4 (lineage) V5 (defaults) remain |
 | 13-review blockers | ~80% ✅ | #1 #5 #6 #7 #8 done; #2/#3 partial (writer-side), #4 partial (identity partitions) |
 | CI/CD (doc 10 §1a) | ~75% ✅ | all-branch datalake-ci ✅ docs-sentinel ✅ · sanitizer/coverage jobs ❌ |
-| Perf (13-review E) | ~60% 🔶 | batch ABI ✅ bounds ✅ · P0b lazy ranged reader ❌ planning-IO 🔶 |
+| Perf (13-review E) | ~80% ✅ | batch ABI ✅ bounds ✅ · P0b ranged+cached+projection-pruned opens ✅ (#17) · P0b2 page-index pruning ❌ P0b3 row-group-deferred ❌ |
 
 ## 4. Recently landed (reverse-chronological, evidence in HANDOFF)
 
 | Date | Slice | PR |
 |---|---|---|
+| 2026-11-21 | P0b ranged/cached/projection-pruned parquet opens (laziness + repeat-free proven) | #17 |
+| 2026-11-21 | CI: cargo audit gate + smart path filtering (docs-only skips code jobs) | #16 |
+| 2026-11-21 | object_store 0.11→0.14.2 — RUSTSEC-2026-0194/-0195 cleared | #15 |
+| 2026-11-21 | Pre-commit hygiene gate: pgindent (fork typedefs) + fmt/clippy pedantic | #13 |
+| 2026-11-21 | Staged-publish acceptance pin (2 segs → 1 snapshot, live) | #13 |
 | 2026-11-21 | parquet/arrow 60.1.0 lockstep bump + spec 15 §6.3a/§6.5 v60 alignment | #14 |
 | 2026-11-21 | Staged-publish acceptance pin (2 segs → 1 snapshot, live) | #13 |
 | 2026-11-21 | Hash-key aliasing fix: per-row staged-capture regression ROOT-CAUSED | #9 |
@@ -74,18 +79,24 @@ flowchart LR
 
 ## 5. Next queue
 
-1. **P0b** — lazy ranged parquet reader (cache-backed `ChunkReader`,
-   zero-GET EXPLAIN, 13-review perf #1) — branch AFTER the parquet-60
-   upgrade lands (#14)
-2. **P0b2** — cached page indexes + bloom-filter reads through the same
+1. **P0b4 metadata elision** — PROMOTED to first: measured evidence
+   (10-testing §5.2 internal receipts) shows count(*) ships ALL 23
+   columns × 28.8M rows across the FDW boundary, 100% CPU in transport,
+   zero I/O wait — the fetch side is done, the planner is the gap.
+   Planner-level COUNT/MIN/MAX from cached footers + manifest
+   record_counts (spec 15 §6.6); includes row_count column on the
+   delta ledger
+2. **P0b3** — row-group-deferred batch iteration (P0b's open_internal
+   still collects batches eagerly; laziness is per-column/per-scan) —
+   the q3-class full-scan canary needs this + P0b4
+3. **P0b2** — cached page indexes + bloom-filter reads through the same
    block cache (parquet ≥60 building blocks; spec 15 §6.3a) — selective
    page-level pruning
-3. **object_store 0.11 → 0.14.1** — PROMOTED (security: RUSTSEC-2026-0194/
-   -0195 via quick-xml, fixed only in 0.14.1; spec 15 §6.5). Breaking:
-   ObjectStoreExt trait split + copy_opts; StorageIo migration +
-   `cargo audit` in CI
 4. **M3 close-out** — MVCC models → ADLS/GCS IO + auth → branches/tags →
    logical-repl decision (gate: 4-store CI matrix + isolation tests)
-4. **M4** — compaction/expire/orphan/ANALYZE on the P4c worker skeleton;
+5. **M4** — compaction/expire/orphan/ANALYZE on the P4c worker skeleton;
    optimize exec tiers (design: doc 08); writer-gated encodings (ALP,
    bloom filters — downstream-decoder gate, spec 15 §6.5)
+6. **object_store follow-ups** — DONE 0.14.2 in #15 (RUSTSEC cleared,
+   cargo audit in CI); remaining: CRC64NVME checksummed writes +
+   read-timeout wiring when StorageIo hardening resumes

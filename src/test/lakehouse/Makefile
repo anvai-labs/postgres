@@ -43,4 +43,12 @@ lakehouse-conformance:
 	@echo "lakehouse-conformance: not implemented until M1 (specs/lakehouse/12-roadmap.md)" && exit 1
 
 perf-lakehouse:
-	@echo "perf-lakehouse: not implemented until M4 (specs/lakehouse/10-testing.md §5)" && exit 1
+	@echo "perf-lakehouse (spec 10 §5): python driver + pyiceberg fixture gen"
+	@echo "  README + usage: scripts/perf/README.md"
+	@echo "  tpcds: python3 scripts/perf/lakehouse_perf.py --suite tpcds --dsn <dsn>"
+	@echo "  scan : python3 scripts/perf/lakehouse_perf.py --suite scan --dsn <dsn> --generate-scan"
+	@if [ -n "$$DSN" ]; then \
+	  python3 scripts/perf/lakehouse_perf.py --suite $${PERF_SUITE:-tpcds} --dsn "$$DSN" $(PERF_ARGS); \
+	else \
+	  echo "  set DSN=postgres://... (a RELEASE-build server) to actually run; see scripts/perf/README.md"; \
+	fi

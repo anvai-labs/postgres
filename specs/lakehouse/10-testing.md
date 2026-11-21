@@ -192,6 +192,33 @@ for external locations). Our analogous lever stays retro #3
 subplans). proximaDB's side: TD-OLAP-4, branch
 feat/external-table-df-exec.
 
+### 5.2 INTERNAL receipts — post perf-fix #1 read-path state (2026-11-21)
+
+NOT a marketable benchmark: single run, in-flight measurements, no
+protocol polish yet. Recorded as ENGINEERING evidence for the next
+slices (P0b4 etc.). Same fixture as §5.1 (TPC-DS SF=10, store_sales
+73 files), release build (parquet/arrow 60.1.0 + object_store 0.14.2
++ P0b ranged/cached opens), fresh instance, postgres-native diagnosis:
+
+- `EXPLAIN (VERBOSE) SELECT count(*) FROM store_sales`: the Parallel
+  Foreign Scan's Output list carries **ALL 23 columns** — count(*)
+  materializes and transports 28.8M rows × 23 columns across the FDW
+  boundary; the aggregate sits ABOVE the scan.
+- `pg_stat_activity`: 3 backends (leader + 2 parallel workers) all
+  `active` with **empty wait events** — 100% CPU in row decode/
+  transport, 0% blocked on I/O. The fetch side (P0b) is NOT the
+  bottleneck anymore; executor-side transport is.
+- Full-table `count(*)` measured ~12 min (row transport); with an
+  empty projection P0b's ProjectionMask already fetches no column
+  chunks — elision (P0b4, spec 15 §6.6) removes the transport too by
+  answering from manifest record_counts (exact for this snapshot).
+- q1/q2-class queries (predicate-pruned, small results) are expected
+  to show the batch-ABI + P0b wins; the q3-class full-scan canary
+  remains gated on executor-side aggregation (P0b4/P0b3).
+
+Marketed §5.1-style comparison table: deferred until the P0b4 +
+P0b3 slices land and a clean warmup+3 protocol completes.
+
 ## 6. Developer loop
 
 ```bash

@@ -1088,3 +1088,34 @@ layout, style, secrets, TDD (§8), smoke-test ceremony (§9). Follow it.
     earlier "capture 3× with staged_rows=1" observation was the alias
     entries. The two-phase PRE_COMMIT restructure (commit 5ded905e) is
     still the correct pattern and stays.
+
+## PERF INSIGHTS (2026-11-21, internal receipts — not marketable claims)
+
+Post perf-fix #1 arc (#14 parquet/arrow 60.1.0 → #15 object_store 0.14.2
+→ #16 audit gate + smart CI → #17 P0b ranged/cached opens), measured on
+the TPC-DS SF=10 fixture (release build, fresh instance):
+
+- EXPLAIN (VERBOSE) count(*) on store_sales: Parallel Foreign Scan
+  outputs ALL 23 columns; aggregate ABOVE the scan — 28.8M rows × 23
+  cols transported for a count. 3 backends, zero I/O wait (CPU-bound
+  transport). Fetch side proven done (P0b ProjectionMask fetches no
+  chunks for empty projection).
+- Full-table count ≈ 12 min = pure executor transport.
+- P0b4 (spec 15 §6.6) PROMOTED to next: planner-level trivial-aggregate
+  elision from cached footers + manifest record_counts; needs row_count
+  column on lakehouse_delta_segments (next ext-version bump).
+- Perf harness SHIPPED (#19): scripts/perf/lakehouse_perf.py (psycopg2/
+  pgwire only), tpcds + scan suites, scale-factor fixture identity
+  (perfcn.scan_bench_n<rows>, --tpcds-ns tpcds_sf<N>), verified fixture
+  reuse (count+sum checksum; NOTICE reuse / WARNING regen /
+  --force-regen), make perf-lakehouse wired.
+- Measurement discipline learned the hard way: NEVER launch overlapping
+  runner invocations against one instance (server restarts kill each
+  other's counts; racing duplicates poison timings). One runner, one
+  instance, one protocol pass.
+
+NEXT STEPS (driven by insights): P0b4 elision (regress-testable offline:
+fixture table + count(*) exactness + EXPLAIN shows no foreign-scan
+transport) → P0b3 row-group-deferred iteration (q3 canary) → P0b2
+page-index pruning → §5.2 marketed comparison once clean protocol
+completes.
