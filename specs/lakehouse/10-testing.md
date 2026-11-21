@@ -208,7 +208,8 @@ slices (P0b4 etc.). Same fixture as §5.1 (TPC-DS SF=10, store_sales
   `active` with **empty wait events** — 100% CPU in row decode/
   transport, 0% blocked on I/O. The fetch side (P0b) is NOT the
   bottleneck anymore; executor-side transport is.
-- Full-table `count(*)` measured ~12 min (row transport); with an
+- Full-table `count(*)` measured 11:29.8 clean (689.8 s; solo run,
+  no contention) — row transport; with an
   empty projection P0b's ProjectionMask already fetches no column
   chunks — elision (P0b4, spec 15 §6.6) removes the transport too by
   answering from manifest record_counts (exact for this snapshot).

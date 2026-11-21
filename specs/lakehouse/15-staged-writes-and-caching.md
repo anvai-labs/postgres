@@ -472,12 +472,16 @@ uncertainty:
 | staged overlay (own writes) | exact, cheap | ledger `row_count` column at capture time (COUNT); staged payloads parsed for min/max (few rows; capture-time per-column summaries as the later O(1) form) |
 | concurrent publisher commits S+1 | consistent | manifests are immutable per snapshot — elision reads the PINNED snapshot's manifests, the same AssertRefSnapshotId semantics as row reads |
 
-Mechanism: the FDW's PlanForeignScan detects trivial aggregates
-(single table, no joins, target list ⊆ {COUNT(*), MIN(col), MAX(col)},
-no unresolvable filters) and returns a one-row plan computed from
-cached metadata + the staged ledger. Also requires: a `row_count`
-column on lakehouse_delta_segments (capture-time, exact) — schema
-addition rides the next extension-version bump.
+Mechanism slices — FDW and MANAGED tables take different routes
+because Postgres has no TableAM aggregate hook (GetForeignUpperPaths
+does not fire for AM scans):
+
+| Slice | Covers | Mechanism |
+|---|---|---|
+| A (FDW) | foreign tables | GetForeignUpperPaths + PlanForeignScan: one-row upper ForeignPath computed from manifest record_counts (postgres_fdw aggregate-pushdown pattern) |
+| B (ledger) | both | `row_count` column on lakehouse_delta_segments, capture-time exact — staged overlay input for COUNT; schema rides the next extension-version bump |
+| C (managed) | `USING lakehouse` tables | planner_hook (RULES §3 allowlist) detects trivial aggregates over AM tables and substitutes a one-row plan from manifests + ledger; AM scans cannot be elided from inside the AM (no hook) |
+| D (MIN/MAX) | both | needs footer-stat FFI (scan-level per-column min/max from cached footers); pos-delete extremum verification per §6.6 rules |
 
 ## 7. Prerequisites & rollout (refined 2026-11-20 — verified against code)
 
